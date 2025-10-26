@@ -1,0 +1,147 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Todo App</title>
+
+  <!-- API base and optional CSRF (if Spring Security enabled) -->
+  <meta name="api-base" th:content="@{/api/todos}"/>
+  <meta name="_csrf" th:content="${_csrf.token}" th:if="${_csrf != null}"/>
+  <meta name="_csrf_header" th:content="${_csrf.headerName}" th:if="${_csrf != null}"/>
+
+  <link rel="stylesheet" th:href="@{/css/styles.css}" href="/css/styles.css"/>
+</head>
+<body>
+  <div class="container">
+    <header><h1>Todo App</h1></header>
+
+    <section class="card">
+      <h2>Create task</h2>
+      <form id="createForm">
+        <div class="row">
+          <input id="title" name="title" placeholder="Title" required />
+        </div>
+        <div class="row">
+          <textarea id="description" name="description" placeholder="Description" required maxlength="200"></textarea>
+        </div>
+        <div class="row actions">
+          <label><input id="completed" type="checkbox" /> Completed</label>
+          <button type="submit" class="btn primary">Create</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Tasks</h2>
+      <table id="todosTable" class="striped">
+        <thead>
+          <tr>
+            <th>ID</th><th>Title</th><th>Description</th><th>Completed</th><th>Created At</th><th>Completed At</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
+
+  <div id="editModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Edit Task</h3>
+      <form id="editForm">
+        <input type="hidden" id="editId"/>
+        <div class="row"><input id="editTitle" name="title" placeholder="Title" required /></div>
+        <div class="row"><textarea id="editDescription" name="description" placeholder="Description" required maxlength="200"></textarea></div>
+        <div class="row actions">
+          <label><input id="editCompleted" type="checkbox" /> Completed</label>
+          <button type="submit" class="btn primary">Save</button>
+          <button type="button" id="cancelEdit" class="btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Read API base and CSRF safely from meta tags (no th:inline processing)
+    const apiBase = document.querySelector('meta[name="api-base"]')?.content || '/api/todos';
+    const csrfToken = document.querySelector('meta[name="_csrf"]')?.content;
+    const csrfHeader = document.querySelector('meta[name="_csrf_header"]')?.content;
+
+    function headersJson() {
+      const h = {'Content-Type':'application/json'};
+      if (csrfToken && csrfHeader) h[csrfHeader] = csrfToken;
+      return h;
+    }
+
+    function escapeHtml(s){ if(!s) return ''; return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
+
+    async function loadTodos(){
+      const res = await fetch(apiBase);
+      const data = await res.json();
+      const tbody = document.querySelector('#todosTable tbody');
+      tbody.innerHTML = '';
+      data.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${t.id||''}</td>
+                        <td>${escapeHtml(t.title)}</td>
+                        <td>${escapeHtml(t.description)}</td>
+                        <td>${t.completed? 'Yes':'No'}</td>
+                        <td>${t.createdAt? new Date(t.createdAt).toLocaleString():''}</td>
+                        <td>${t.completedAt? new Date(t.completedAt).toLocaleString():''}</td>
+                        <td class="actions">
+                          <button class="btn small" data-id="${t.id}" onclick="openEdit(${t.id})">Edit</button>
+                          <button class="btn danger small" onclick="remove(${t.id})">Delete</button>
+                        </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById('createForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const payload = {
+        title: document.getElementById('title').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        completed: document.getElementById('completed').checked
+      };
+      await fetch(apiBase, {method:'POST', headers: headersJson(), body: JSON.stringify(payload)});
+      e.target.reset();
+      await loadTodos();
+    });
+
+    async function openEdit(id){
+      const res = await fetch(`${apiBase}/${id}`);
+      if (!res.ok) return alert('Task not found');
+      const t = await res.json();
+      document.getElementById('editId').value = t.id;
+      document.getElementById('editTitle').value = t.title;
+      document.getElementById('editDescription').value = t.description;
+      document.getElementById('editCompleted').checked = t.completed;
+      document.getElementById('editModal').classList.remove('hidden');
+    }
+
+    document.getElementById('cancelEdit').addEventListener('click', ()=> document.getElementById('editModal').classList.add('hidden'));
+
+    document.getElementById('editForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const id = document.getElementById('editId').value;
+      const payload = {
+        title: document.getElementById('editTitle').value.trim(),
+        description: document.getElementById('editDescription').value.trim(),
+        completed: document.getElementById('editCompleted').checked
+      };
+      await fetch(`${apiBase}/${id}`, {method:'PUT', headers: headersJson(), body: JSON.stringify(payload)});
+      document.getElementById('editModal').classList.add('hidden');
+      await loadTodos();
+    });
+
+    async function remove(id){
+      if(!confirm('Delete this task?')) return;
+      await fetch(`${apiBase}/${id}`, {method:'DELETE', headers: csrfToken && csrfHeader ? {[csrfHeader]:csrfToken} : {}});
+      await loadTodos();
+    }
+
+    // initial load
+    loadTodos();
+  </script>
+</body>
+</html>
